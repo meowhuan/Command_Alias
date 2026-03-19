@@ -1,0 +1,37 @@
+# Gradle
+.gradle/
+.gradle-user/
+build/
+out/
+*.log
+*.hprof
+*.prof
+*.class
+**/buildSrc/.gradle/
+**/buildSrc/build/
+
+# Gradle wrapper cache / dist (if generated locally)
+gradle-*/
+gradle-*.zip
+
+# Fabric / Minecraft
+run/
+logs/
+crash-reports/
+world/
+saves/
+mods/
+config/
+
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db

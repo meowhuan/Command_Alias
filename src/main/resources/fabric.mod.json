@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "command_alias",
+  "version": "${version}",
+  "name": "Command Alias",
+  "description": "Custom command aliases with permission control, whitelist/blacklist, and multi-command execution.",
+  "authors": [
+    "You"
+  ],
+  "contact": {},
+  "license": "MIT",
+  "environment": "server",
+  "entrypoints": {
+    "main": [
+      "com.meowhuan.commandalias.CommandAliasMod"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.16.5",
+    "minecraft": "1.21.11",
+    "fabric": "*"
+  }
+}
