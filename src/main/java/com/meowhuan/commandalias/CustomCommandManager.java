@@ -4,11 +4,12 @@ import com.meowhuan.commandalias.ConfigStore.CommandConfig;
 import com.meowhuan.commandalias.ConfigStore.CommandEntry;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
-import com.mojang.brigadier.suggestion.SuggestionProvider;
+import com.mojang.brigadier.ParseResults;
+import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.context.StringRange;
+import com.mojang.brigadier.suggestion.Suggestion;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
-import com.mojang.brigadier.context.CommandContext;
-import com.mojang.brigadier.ParseResults;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -216,27 +217,34 @@ public final class CustomCommandManager {
         SuggestionsBuilder builder
     ) {
         String input = builder.getRemaining();
-        String withoutSlash = input.startsWith("/") ? input.substring(1) : input;
-        String leading = input.startsWith("/") ? "/" : "";
+        boolean hasLeadingSlash = input.startsWith("/");
+        String parseInput = hasLeadingSlash ? input.substring(1) : input;
 
-        CommandDispatcher<ServerCommandSource> disp = context.getSource().getServer()
+        CommandDispatcher<ServerCommandSource> dispatcher = context.getSource().getServer()
             .getCommandManager()
             .getDispatcher();
 
-        ParseResults<ServerCommandSource> parse = disp.parse(withoutSlash, context.getSource());
-        CompletableFuture<Suggestions> future = disp.getCompletionSuggestions(parse, withoutSlash.length());
+        ParseResults<ServerCommandSource> parse = dispatcher.parse(parseInput, context.getSource());
+        CompletableFuture<Suggestions> future = dispatcher.getCompletionSuggestions(parse, parseInput.length());
 
         return future.thenApply(suggestions -> {
-            SuggestionsBuilder merged = builder.createOffset(builder.getStart());
-            suggestions.getList().forEach(suggestion -> {
-                String text = suggestion.getText();
-                if (leading.equals("/") && !text.startsWith("/")) {
-                    merged.suggest(leading + text);
-                } else {
-                    merged.suggest(text);
-                }
-            });
-            return merged.build();
+            int shift = builder.getStart() + (hasLeadingSlash ? 1 : 0);
+            List<Suggestion> shifted = new ArrayList<>();
+            for (Suggestion suggestion : suggestions.getList()) {
+                StringRange range = suggestion.getRange();
+                StringRange shiftedRange = StringRange.between(
+                    range.getStart() + shift,
+                    range.getEnd() + shift
+                );
+                shifted.add(new Suggestion(shiftedRange, suggestion.getText(), suggestion.getTooltip()));
+            }
+            return new Suggestions(
+                StringRange.between(
+                    suggestions.getRange().getStart() + shift,
+                    suggestions.getRange().getEnd() + shift
+                ),
+                shifted
+            );
         });
     }
 
