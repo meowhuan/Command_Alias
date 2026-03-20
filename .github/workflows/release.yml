@@ -20,6 +20,9 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+          
+      - name: 赋予 gradlew 执行权限
+        run: chmod +x gradlew
 
       - name: Build
         run: ./gradlew --no-daemon build
