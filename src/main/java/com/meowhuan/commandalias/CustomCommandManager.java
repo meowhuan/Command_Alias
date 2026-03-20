@@ -4,12 +4,18 @@ import com.meowhuan.commandalias.ConfigStore.CommandConfig;
 import com.meowhuan.commandalias.ConfigStore.CommandEntry;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.suggestion.SuggestionProvider;
+import com.mojang.brigadier.suggestion.Suggestions;
+import com.mojang.brigadier.suggestion.SuggestionsBuilder;
+import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.ParseResults;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.UUID;
 import net.minecraft.command.permission.Permission;
 import net.minecraft.command.permission.PermissionLevel;
@@ -151,6 +157,87 @@ public final class CustomCommandManager {
 
     public static CommandConfig getConfig() {
         return config;
+    }
+
+    public static CompletableFuture<Suggestions> suggestAliases(
+        CommandContext<ServerCommandSource> context,
+        SuggestionsBuilder builder
+    ) {
+        String remaining = builder.getRemaining().toLowerCase(Locale.ROOT);
+        for (String alias : config.commands.keySet()) {
+            if (alias.startsWith(remaining)) {
+                builder.suggest(alias);
+            }
+        }
+        return builder.buildFuture();
+    }
+
+    public static CompletableFuture<Suggestions> suggestOnlinePlayerNames(
+        CommandContext<ServerCommandSource> context,
+        SuggestionsBuilder builder
+    ) {
+        MinecraftServer server = context.getSource().getServer();
+        String remaining = builder.getRemaining().toLowerCase(Locale.ROOT);
+        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+            String name = player.getName().getString();
+            if (name.toLowerCase(Locale.ROOT).startsWith(remaining)) {
+                builder.suggest(name);
+            }
+        }
+        return builder.buildFuture();
+    }
+
+    public static CompletableFuture<Suggestions> suggestRootCommands(
+        CommandContext<ServerCommandSource> context,
+        SuggestionsBuilder builder
+    ) {
+        String remaining = builder.getRemaining();
+        int spaceIndex = remaining.indexOf(' ');
+        String token = spaceIndex == -1 ? remaining : remaining.substring(0, spaceIndex);
+        String prefix = token.startsWith("/") ? token.substring(1) : token;
+        String lower = prefix.toLowerCase(Locale.ROOT);
+
+        var root = context.getSource().getServer().getCommandManager().getDispatcher().getRoot();
+        root.getChildren().forEach(node -> {
+            String name = node.getName();
+            if (name.toLowerCase(Locale.ROOT).startsWith(lower)) {
+                if (token.startsWith("/")) {
+                    builder.suggest("/" + name);
+                } else {
+                    builder.suggest(name);
+                }
+            }
+        });
+        return builder.buildFuture();
+    }
+
+    public static CompletableFuture<Suggestions> suggestFullCommandLine(
+        CommandContext<ServerCommandSource> context,
+        SuggestionsBuilder builder
+    ) {
+        String input = builder.getRemaining();
+        String withoutSlash = input.startsWith("/") ? input.substring(1) : input;
+        String leading = input.startsWith("/") ? "/" : "";
+
+        CommandDispatcher<ServerCommandSource> disp = context.getSource().getServer()
+            .getCommandManager()
+            .getDispatcher();
+
+        ParseResults<ServerCommandSource> parse = disp.parse(withoutSlash, context.getSource());
+        CompletableFuture<Suggestions> future = disp.getCompletionSuggestions(parse, withoutSlash.length());
+
+        return future.thenApply(suggestions -> {
+            SuggestionsBuilder merged = builder.createOffset(builder.getStart());
+            suggestions.getList().forEach(suggestion -> {
+                String text = suggestion.getText();
+                if (leading.equals("/") && !text.startsWith("/")) {
+                    merged.suggest(leading + text);
+                } else {
+                    merged.suggest(text);
+                }
+            });
+            return merged.build();
+        });
     }
 
     public static boolean addOrUpdate(String alias, String commandText, int permissionLevel) {

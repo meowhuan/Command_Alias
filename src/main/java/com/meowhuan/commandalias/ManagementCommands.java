@@ -12,7 +12,9 @@ import net.minecraft.command.permission.Permission;
 import net.minecraft.command.permission.PermissionLevel;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 
 public final class ManagementCommands {
     private static final int ADMIN_PERMISSION = 2;
@@ -47,10 +49,12 @@ public final class ManagementCommands {
         return CommandManager.literal("add")
             .then(CommandManager.argument("alias", StringArgumentType.word())
                 .then(CommandManager.argument("command", StringArgumentType.greedyString())
+                    .suggests(CustomCommandManager::suggestFullCommandLine)
                     .executes(ctx -> {
                         String alias = StringArgumentType.getString(ctx, "alias");
                         String command = StringArgumentType.getString(ctx, "command");
-                        boolean ok = CustomCommandManager.addOrUpdate(alias, command, ADMIN_PERMISSION);
+                        int defaultPerm = CustomCommandManager.getConfig().defaultPermission;
+                        boolean ok = CustomCommandManager.addOrUpdate(alias, command, defaultPerm);
                         if (ok) {
                             ctx.getSource().sendFeedback(
                                 () -> tr("command_alias.msg.added", "已添加别名 %s", "/" + alias),
@@ -68,6 +72,7 @@ public final class ManagementCommands {
             .then(CommandManager.argument("alias", StringArgumentType.word())
                 .then(CommandManager.argument("permission", IntegerArgumentType.integer(0, 4))
                     .then(CommandManager.argument("command", StringArgumentType.greedyString())
+                        .suggests(CustomCommandManager::suggestFullCommandLine)
                         .executes(ctx -> {
                             String alias = StringArgumentType.getString(ctx, "alias");
                             int permission = IntegerArgumentType.getInteger(ctx, "permission");
@@ -88,6 +93,24 @@ public final class ManagementCommands {
     private static LiteralArgumentBuilder<ServerCommandSource> buildEdit() {
         return CommandManager.literal("edit")
             .then(CommandManager.argument("alias", StringArgumentType.word())
+                .suggests(CustomCommandManager::suggestAliases)
+                .then(CommandManager.argument("permission", IntegerArgumentType.integer(0, 4))
+                    .then(CommandManager.argument("command", StringArgumentType.greedyString())
+                        .executes(ctx -> {
+                            String alias = StringArgumentType.getString(ctx, "alias");
+                            int permission = IntegerArgumentType.getInteger(ctx, "permission");
+                            String command = StringArgumentType.getString(ctx, "command");
+                            boolean ok = CustomCommandManager.addOrUpdate(alias, command, permission);
+                            if (ok) {
+                                ctx.getSource().sendFeedback(
+                                    () -> tr("command_alias.msg.updated", "已更新别名 %s", "/" + alias),
+                                    false
+                                );
+                                return 1;
+                            }
+                            ctx.getSource().sendError(tr("command_alias.msg.update_failed", "更新别名失败。"));
+                            return 0;
+                        })))
                 .then(CommandManager.argument("command", StringArgumentType.greedyString())
                     .executes(ctx -> {
                         String alias = StringArgumentType.getString(ctx, "alias");
@@ -110,6 +133,7 @@ public final class ManagementCommands {
     private static LiteralArgumentBuilder<ServerCommandSource> buildRemove() {
         return CommandManager.literal("remove")
             .then(CommandManager.argument("alias", StringArgumentType.word())
+                .suggests(CustomCommandManager::suggestAliases)
                 .executes(ctx -> {
                     String alias = StringArgumentType.getString(ctx, "alias");
                     boolean ok = CustomCommandManager.remove(alias);
@@ -133,37 +157,44 @@ public final class ManagementCommands {
                     ctx.getSource().sendFeedback(() -> tr("command_alias.msg.list_empty", "暂无别名配置。"), false);
                     return 1;
                 }
-                ctx.getSource().sendFeedback(() -> tr("command_alias.msg.list_header", "别名列表："), false);
+                ctx.getSource().sendFeedback(
+                    () -> tr("command_alias.msg.list_header", "别名列表：").copy().formatted(Formatting.GOLD),
+                    false
+                );
                 for (Map.Entry<String, CommandEntry> entry : config.commands.entrySet()) {
                     String alias = entry.getKey();
                     CommandEntry value = entry.getValue();
-                    String actions = String.join("; ", value.actions);
                     String allowNames = String.join(", ", value.allowNames);
                     String denyNames = String.join(", ", value.denyNames);
                     String allowUuids = String.join(", ", value.allowUuids);
                     String denyUuids = String.join(", ", value.denyUuids);
-                    ctx.getSource().sendFeedback(
-                        () -> tr(
-                            "command_alias.msg.list_item",
-                            "%s -> [%s]（权限 %s）",
-                            "/" + alias,
-                            actions,
-                            value.permissionLevel
-                        ),
-                        false
-                    );
+
+                    MutableText line = Text.empty()
+                        .append(Text.literal("/" + alias).formatted(Formatting.GOLD))
+                        .append(Text.literal(" -> ").formatted(Formatting.DARK_GRAY))
+                        .append(Text.literal("[").formatted(Formatting.DARK_GRAY))
+                        .append(Text.literal(String.join("; ", value.actions)).formatted(Formatting.GREEN))
+                        .append(Text.literal("]").formatted(Formatting.DARK_GRAY))
+                        .append(Text.literal(" (perm " + value.permissionLevel + ")").formatted(Formatting.BLUE));
+
+                    ctx.getSource().sendFeedback(() -> line, false);
+
                     if (!allowNames.isEmpty() || !denyNames.isEmpty() || !allowUuids.isEmpty() || !denyUuids.isEmpty()) {
-                        ctx.getSource().sendFeedback(
-                            () -> tr(
-                                "command_alias.msg.list_acl",
-                                "  allowNames=[%s] denyNames=[%s] allowUuids=[%s] denyUuids=[%s]",
-                                allowNames,
-                                denyNames,
-                                allowUuids,
-                                denyUuids
-                            ),
-                            false
-                        );
+                        MutableText acl = Text.empty()
+                            .append(Text.literal("  allowNames=[").formatted(Formatting.DARK_GRAY))
+                            .append(Text.literal(allowNames).formatted(Formatting.GREEN))
+                            .append(Text.literal("] ").formatted(Formatting.DARK_GRAY))
+                            .append(Text.literal("denyNames=[").formatted(Formatting.DARK_GRAY))
+                            .append(Text.literal(denyNames).formatted(Formatting.RED))
+                            .append(Text.literal("] ").formatted(Formatting.DARK_GRAY))
+                            .append(Text.literal("allowUuids=[").formatted(Formatting.DARK_GRAY))
+                            .append(Text.literal(allowUuids).formatted(Formatting.GREEN))
+                            .append(Text.literal("] ").formatted(Formatting.DARK_GRAY))
+                            .append(Text.literal("denyUuids=[").formatted(Formatting.DARK_GRAY))
+                            .append(Text.literal(denyUuids).formatted(Formatting.RED))
+                            .append(Text.literal("]").formatted(Formatting.DARK_GRAY));
+
+                        ctx.getSource().sendFeedback(() -> acl, false);
                     }
                 }
                 return 1;
@@ -174,9 +205,10 @@ public final class ManagementCommands {
         return CommandManager.literal("help")
             .executes(ctx -> {
                 ctx.getSource().sendFeedback(() -> tr("command_alias.msg.help.header", "Command Alias 帮助："), false);
-                ctx.getSource().sendFeedback(() -> tr("command_alias.msg.help.add", "/cmd add <alias> <command...> - 添加别名（默认权限2）"), false);
+                ctx.getSource().sendFeedback(() -> tr("command_alias.msg.help.add", "/cmd add <alias> <command...> - 添加别名（默认权限0）"), false);
                 ctx.getSource().sendFeedback(() -> tr("command_alias.msg.help.addop", "/cmd addop <alias> <permission> <command...> - 添加别名（自定义权限0-4）"), false);
-                ctx.getSource().sendFeedback(() -> tr("command_alias.msg.help.edit", "/cmd edit <alias> <command...> - 编辑别名"), false);
+                ctx.getSource().sendFeedback(() -> tr("command_alias.msg.help.edit", "/cmd edit <alias> <command...> - 编辑别名（保留原权限）"), false);
+                ctx.getSource().sendFeedback(() -> tr("command_alias.msg.help.edit_perm", "/cmd edit <alias> <permission> <command...> - 编辑别名并修改权限"), false);
                 ctx.getSource().sendFeedback(() -> tr("command_alias.msg.help.remove", "/cmd remove <alias> - 删除别名"), false);
                 ctx.getSource().sendFeedback(() -> tr("command_alias.msg.help.list", "/cmd list - 列出所有别名"), false);
                 ctx.getSource().sendFeedback(() -> tr("command_alias.msg.help.reload", "/cmd reload - 重载配置"), false);
@@ -196,7 +228,9 @@ public final class ManagementCommands {
     private static LiteralArgumentBuilder<ServerCommandSource> buildAllowName() {
         return CommandManager.literal("allowname")
             .then(CommandManager.argument("alias", StringArgumentType.word())
+                .suggests(CustomCommandManager::suggestAliases)
                 .then(CommandManager.argument("name", StringArgumentType.word())
+                    .suggests(CustomCommandManager::suggestOnlinePlayerNames)
                     .executes(ctx -> {
                         String alias = StringArgumentType.getString(ctx, "alias");
                         String name = StringArgumentType.getString(ctx, "name");
@@ -216,7 +250,9 @@ public final class ManagementCommands {
     private static LiteralArgumentBuilder<ServerCommandSource> buildDenyName() {
         return CommandManager.literal("denyname")
             .then(CommandManager.argument("alias", StringArgumentType.word())
+                .suggests(CustomCommandManager::suggestAliases)
                 .then(CommandManager.argument("name", StringArgumentType.word())
+                    .suggests(CustomCommandManager::suggestOnlinePlayerNames)
                     .executes(ctx -> {
                         String alias = StringArgumentType.getString(ctx, "alias");
                         String name = StringArgumentType.getString(ctx, "name");
@@ -236,7 +272,9 @@ public final class ManagementCommands {
     private static LiteralArgumentBuilder<ServerCommandSource> buildUnallowName() {
         return CommandManager.literal("unallowname")
             .then(CommandManager.argument("alias", StringArgumentType.word())
+                .suggests(CustomCommandManager::suggestAliases)
                 .then(CommandManager.argument("name", StringArgumentType.word())
+                    .suggests(CustomCommandManager::suggestOnlinePlayerNames)
                     .executes(ctx -> {
                         String alias = StringArgumentType.getString(ctx, "alias");
                         String name = StringArgumentType.getString(ctx, "name");
@@ -256,7 +294,9 @@ public final class ManagementCommands {
     private static LiteralArgumentBuilder<ServerCommandSource> buildUndenyName() {
         return CommandManager.literal("undenyname")
             .then(CommandManager.argument("alias", StringArgumentType.word())
+                .suggests(CustomCommandManager::suggestAliases)
                 .then(CommandManager.argument("name", StringArgumentType.word())
+                    .suggests(CustomCommandManager::suggestOnlinePlayerNames)
                     .executes(ctx -> {
                         String alias = StringArgumentType.getString(ctx, "alias");
                         String name = StringArgumentType.getString(ctx, "name");
@@ -276,6 +316,7 @@ public final class ManagementCommands {
     private static LiteralArgumentBuilder<ServerCommandSource> buildAllowUuid() {
         return CommandManager.literal("allowuuid")
             .then(CommandManager.argument("alias", StringArgumentType.word())
+                .suggests(CustomCommandManager::suggestAliases)
                 .then(CommandManager.argument("uuid", StringArgumentType.word())
                     .executes(ctx -> {
                         String alias = StringArgumentType.getString(ctx, "alias");
@@ -296,6 +337,7 @@ public final class ManagementCommands {
     private static LiteralArgumentBuilder<ServerCommandSource> buildDenyUuid() {
         return CommandManager.literal("denyuuid")
             .then(CommandManager.argument("alias", StringArgumentType.word())
+                .suggests(CustomCommandManager::suggestAliases)
                 .then(CommandManager.argument("uuid", StringArgumentType.word())
                     .executes(ctx -> {
                         String alias = StringArgumentType.getString(ctx, "alias");
@@ -316,6 +358,7 @@ public final class ManagementCommands {
     private static LiteralArgumentBuilder<ServerCommandSource> buildUnallowUuid() {
         return CommandManager.literal("unallowuuid")
             .then(CommandManager.argument("alias", StringArgumentType.word())
+                .suggests(CustomCommandManager::suggestAliases)
                 .then(CommandManager.argument("uuid", StringArgumentType.word())
                     .executes(ctx -> {
                         String alias = StringArgumentType.getString(ctx, "alias");
@@ -336,6 +379,7 @@ public final class ManagementCommands {
     private static LiteralArgumentBuilder<ServerCommandSource> buildUndenyUuid() {
         return CommandManager.literal("undenyuuid")
             .then(CommandManager.argument("alias", StringArgumentType.word())
+                .suggests(CustomCommandManager::suggestAliases)
                 .then(CommandManager.argument("uuid", StringArgumentType.word())
                     .executes(ctx -> {
                         String alias = StringArgumentType.getString(ctx, "alias");
@@ -356,6 +400,7 @@ public final class ManagementCommands {
     private static LiteralArgumentBuilder<ServerCommandSource> buildClearLists() {
         return CommandManager.literal("clearlists")
             .then(CommandManager.argument("alias", StringArgumentType.word())
+                .suggests(CustomCommandManager::suggestAliases)
                 .executes(ctx -> {
                     String alias = StringArgumentType.getString(ctx, "alias");
                     boolean ok = CustomCommandManager.clearLists(alias);

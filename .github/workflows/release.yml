@@ -1,0 +1,81 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Build
+        run: ./gradlew --no-daemon build
+
+      - name: Build Resource Pack
+        run: |
+          set -euo pipefail
+          PACK_ROOT="resourcepack/command_alias_lang_pack"
+          ASSETS_DIR="$PACK_ROOT/assets/command_alias/lang"
+          mkdir -p "$ASSETS_DIR"
+          cp -f src/main/resources/assets/command_alias/lang/zh_cn.json "$ASSETS_DIR/zh_cn.json"
+          cp -f src/main/resources/assets/command_alias/lang/en_us.json "$ASSETS_DIR/en_us.json"
+          cat > "$PACK_ROOT/pack.mcmeta" <<'EOF'
+          {
+            "pack": {
+              "pack_format": 34,
+              "description": "Command Alias i18n (zh_cn + en_us)"
+            }
+          }
+          EOF
+          rm -f command_alias_lang_pack.zip
+          (cd "$PACK_ROOT" && zip -r "../../command_alias_lang_pack.zip" .)
+          sha1sum command_alias_lang_pack.zip | awk '{print $1}' > command_alias_lang_pack.zip.sha1
+
+      - name: Import GPG key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          if [ -n "${GPG_PASSPHRASE:-}" ]; then
+            echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+            gpgconf --kill gpg-agent
+          fi
+
+      - name: Sign artifacts
+        env:
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          for f in build/libs/*.jar command_alias_lang_pack.zip command_alias_lang_pack.zip.sha1; do
+            if [ -n "${GPG_PASSPHRASE:-}" ]; then
+              gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --detach-sign --armor "$f"
+            else
+              gpg --batch --yes --detach-sign --armor "$f"
+            fi
+          done
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/libs/*.jar
+            build/libs/*.jar.asc
+            command_alias_lang_pack.zip
+            command_alias_lang_pack.zip.asc
+            command_alias_lang_pack.zip.sha1
+            command_alias_lang_pack.zip.sha1.asc

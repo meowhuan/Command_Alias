@@ -30,12 +30,32 @@
 你可以使用项目生成的资源包让客户端自动下载语言文本：
 
 - 资源包文件：`command_alias_lang_pack.zip`
-- SHA1：`51FE303934DBCBDAE215C49C8A681E465BEF0771`
+- SHA1：`见发行版SHA1`
 
 在 `server.properties` 中配置：
 ```
 resource-pack=<你的资源包URL>
-resource-pack-sha1=51FE303934DBCBDAE215C49C8A681E465BEF0771
+resource-pack-sha1=见发行版SHA1
+```
+
+---
+
+## 默认权限
+`/cmd add` 会使用配置里的默认权限等级（默认 `0`）。  
+可在配置文件中修改：
+```json
+{
+  "defaultPermission": 0,
+  "commands": {
+    "hub": {
+      "permissionLevel": 2,
+      "actions": [
+        "tp @s 0 100 0",
+        "kill @s"
+      ]
+    }
+  }
+}
 ```
 
 ---
@@ -43,7 +63,7 @@ resource-pack-sha1=51FE303934DBCBDAE215C49C8A681E465BEF0771
 ## 基础命令
 > 管理命令需要 OP 权限（默认权限等级 2）。
 
-1. 添加别名（默认权限 2）
+1. 添加别名（默认权限 0）
 ```
 /cmd add <alias> <command...>
 ```
@@ -60,6 +80,8 @@ resource-pack-sha1=51FE303934DBCBDAE215C49C8A681E465BEF0771
 ```
 /cmd addop hub 0 tp @s 0 100 0; kill @s
 ```
+
+> `add` / `addop` 的 `<command...>` 参数支持 **完整命令补全**（含子参数）。
 
 3. 编辑别名
 ```

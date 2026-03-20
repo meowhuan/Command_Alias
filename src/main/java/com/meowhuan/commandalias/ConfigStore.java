@@ -56,6 +56,7 @@ public final class ConfigStore {
     }
 
     public static final class CommandConfig {
+        public int defaultPermission = 0;
         public Map<String, CommandEntry> commands = new LinkedHashMap<>();
 
         public static CommandConfig createDefault() {
