@@ -25,13 +25,15 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build
-        run: ./gradlew --no-daemon build
+        run: ./gradlew --no-daemon -Dorg.gradle.java.home="${JAVA_HOME}" build
 
       - name: Build Resource Pack
         run: |
           set -euo pipefail
           PACK_ROOT="resourcepack/command_alias_lang_pack"
           ASSETS_DIR="$PACK_ROOT/assets/command_alias/lang"
+          DIST_DIR="dist/release-assets"
+          mkdir -p "$DIST_DIR"
           mkdir -p "$ASSETS_DIR"
           cp -f src/main/resources/assets/command_alias/lang/zh_cn.json "$ASSETS_DIR/zh_cn.json"
           cp -f src/main/resources/assets/command_alias/lang/en_us.json "$ASSETS_DIR/en_us.json"
@@ -43,42 +45,62 @@ jobs:
             }
           }
           EOF
-          rm -f command_alias_lang_pack.zip
-          (cd "$PACK_ROOT" && zip -r "../../command_alias_lang_pack.zip" .)
-          sha1sum command_alias_lang_pack.zip | awk '{print $1}' > command_alias_lang_pack.zip.sha1
+          rm -f "$DIST_DIR/command_alias_lang_pack.zip"
+          (cd "$PACK_ROOT" && zip -r "../../$DIST_DIR/command_alias_lang_pack.zip" .)
+          sha1sum "$DIST_DIR/command_alias_lang_pack.zip" | awk '{print $1}' > "$DIST_DIR/command_alias_lang_pack.zip.sha1"
+          cp -f build/libs/*.jar "$DIST_DIR/"
 
-      - name: Import GPG key
+      - name: Check GPG secrets
+        id: gpg_check
+        shell: pwsh
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
         run: |
-          set -euo pipefail
-          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
-          if [ -n "${GPG_PASSPHRASE:-}" ]; then
-            echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
-            gpgconf --kill gpg-agent
-          fi
+          $enabled = -not [string]::IsNullOrWhiteSpace($env:GPG_PRIVATE_KEY) -and -not [string]::IsNullOrWhiteSpace($env:GPG_PASSPHRASE)
+          if ($enabled) {
+            "enabled=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            Write-Host "GPG signing enabled."
+          } else {
+            "enabled=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            Write-Host "GPG signing skipped: missing secrets."
+          }
 
-      - name: Sign artifacts
+      - name: Import GPG private key
+        id: gpg
+        if: steps.gpg_check.outputs.enabled == 'true'
+        shell: pwsh
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          $keyFile = Join-Path $env:RUNNER_TEMP "acb-signing.key.asc"
+          Set-Content -Path $keyFile -Value $env:GPG_PRIVATE_KEY -Encoding utf8
+          gpg --batch --import $keyFile
+          $fpr = (gpg --batch --list-secret-keys --with-colons | Select-String '^fpr:' | Select-Object -First 1).ToString().Split(':')[9]
+          if (-not $fpr) { throw "No GPG secret key fingerprint found after import." }
+          "fingerprint=$fpr" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Host "Imported GPG key fingerprint: $fpr"
+
+      - name: Sign release assets with GPG
+        if: steps.gpg.outputs.fingerprint != ''
+        shell: pwsh
         env:
           GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          GPG_FPR: ${{ steps.gpg.outputs.fingerprint }}
         run: |
-          set -euo pipefail
-          for f in build/libs/*.jar command_alias_lang_pack.zip command_alias_lang_pack.zip.sha1; do
-            if [ -n "${GPG_PASSPHRASE:-}" ]; then
-              gpg --batch --yes --pinentry-mode loopback --passphrase "$GPG_PASSPHRASE" --detach-sign --armor "$f"
-            else
-              gpg --batch --yes --detach-sign --armor "$f"
-            fi
-          done
+          Get-ChildItem "dist/release-assets" -File | ForEach-Object {
+            $asc = "$($_.FullName).asc"
+            if (Test-Path $asc) { Remove-Item $asc -Force }
+            gpg --batch --yes --pinentry-mode loopback --passphrase "$env:GPG_PASSPHRASE" --local-user "$env:GPG_FPR" --armor --detach-sign "$($_.FullName)"
+          }
 
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            build/libs/*.jar
-            build/libs/*.jar.asc
-            command_alias_lang_pack.zip
-            command_alias_lang_pack.zip.asc
-            command_alias_lang_pack.zip.sha1
-            command_alias_lang_pack.zip.sha1.asc
+            dist/release-assets/*.jar
+            dist/release-assets/*.jar.asc
+            dist/release-assets/command_alias_lang_pack.zip
+            dist/release-assets/command_alias_lang_pack.zip.asc
+            dist/release-assets/command_alias_lang_pack.zip.sha1
+            dist/release-assets/command_alias_lang_pack.zip.sha1.asc
