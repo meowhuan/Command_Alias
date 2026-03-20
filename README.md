@@ -42,7 +42,7 @@ resource-pack-sha1=见发行版SHA1
 
 ## 默认权限
 `/cmd add` 会使用配置里的默认权限等级（默认 `0`）。  
-可在配置文件中修改：
+可在配置文件中修改`defaultPermission`：
 ```json
 {
   "defaultPermission": 0,

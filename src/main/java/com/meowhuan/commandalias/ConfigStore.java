@@ -57,14 +57,14 @@ public final class ConfigStore {
 
     public static final class CommandConfig {
         public int defaultPermission = 0;
+        public String examplesNote = "";
+        public String examplesUrl = "";
         public Map<String, CommandEntry> commands = new LinkedHashMap<>();
 
         public static CommandConfig createDefault() {
             CommandConfig config = new CommandConfig();
-            CommandEntry sample = new CommandEntry();
-            sample.permissionLevel = 2;
-            sample.actions = new String[] { "kill @s" };
-            config.commands.put("hub", sample);
+            config.examplesNote = "JSON示例请前往仓库地址查看：";
+            config.examplesUrl = "https://github.com/Meowhuan/Command_Alias";
             return config;
         }
     }

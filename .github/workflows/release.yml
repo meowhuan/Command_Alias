@@ -25,7 +25,10 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build
-        run: ./gradlew --no-daemon -Dorg.gradle.java.home="${JAVA_HOME}" build
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          ./gradlew --no-daemon -Dorg.gradle.java.home="${JAVA_HOME}" -Pmod_version="${VERSION}" build
 
       - name: Build Resource Pack
         run: |
