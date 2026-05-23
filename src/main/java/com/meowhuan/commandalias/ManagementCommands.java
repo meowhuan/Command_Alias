@@ -420,7 +420,8 @@ public final class ManagementCommands {
         return CommandManager.literal("reload")
             .executes(ctx -> {
                 CustomCommandManager.reloadFromDisk();
-                CustomCommandManager.registerAll();
+                // 使用强制重注册以便在 dispatcher 重建等异常状态下也能恢复
+                CustomCommandManager.forceReregisterAll();
                 ctx.getSource().sendFeedback(() -> tr("command_alias.msg.reloaded", "命令别名已重载。"), false);
                 return 1;
             });

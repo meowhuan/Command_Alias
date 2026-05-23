@@ -36,12 +36,33 @@ public final class CustomCommandManager {
 
     public static void initialize(CommandDispatcher<ServerCommandSource> dispatcher) {
         CustomCommandManager.dispatcher = dispatcher;
+        // Brigadier 在每次 /reload（数据包重载）等事件时都会重建 CommandDispatcher，
+        // 并重新触发 CommandRegistrationCallback。此时旧的 dispatcher 已被丢弃，
+        // 必须清空记录，否则 registerAll() 中的 contains 守卫会跳过所有别名的注册，
+        // 导致已添加的别名在新 dispatcher 上变成"未知指令"，必须重启服务器才能恢复。
+        registeredAliases.clear();
         reloadFromDisk();
         registerAll();
     }
 
     public static void reloadFromDisk() {
         config = ConfigStore.loadOrCreate();
+    }
+
+    /**
+     * 强制重新注册所有别名：先尝试卸载已记录的别名，再清空记录，最后按当前配置重新注册。
+     * 用于手动恢复异常状态（例如 dispatcher 重建后记录与实际不一致的情况）。
+     */
+    public static void forceReregisterAll() {
+        if (dispatcher == null) {
+            return;
+        }
+        // 复制一份以避免在迭代过程中修改集合
+        for (String alias : new ArrayList<>(registeredAliases)) {
+            unregisterAlias(alias);
+        }
+        registeredAliases.clear();
+        registerAll();
     }
 
     public static void registerAll() {
@@ -85,8 +106,11 @@ public final class CustomCommandManager {
         try {
             Object root = dispatcher.getRoot();
             removeChild(root, alias);
-            registeredAliases.remove(alias);
         } catch (Exception ignored) {
+        } finally {
+            // 无论反射是否成功，都从记录中移除，避免记录与实际状态不一致，
+            // 导致后续 registerAll() 的 contains 守卫错误跳过重新注册。
+            registeredAliases.remove(alias);
         }
     }
 
